@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: mytube-api
+    name: downloader-api
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
