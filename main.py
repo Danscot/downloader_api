@@ -12,12 +12,16 @@ class VideoRequest(BaseModel):
 async def download_video(data: VideoRequest):
     url = data.url
     output_dir = "downloads"
-    os.makedirs(output_dir, exist_ok=True)
+
+    # 👇 Create the folder if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     ydl_opts = {
         'outtmpl': os.path.join(output_dir, '%(title).50s.%(ext)s'),
         'format': 'best',
         'noplaylist': True,
+        # 'cookiefile': 'cookies.txt',  # Uncomment if needed
     }
 
     try:
@@ -25,6 +29,8 @@ async def download_video(data: VideoRequest):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             platform = 'unknown'
+
+            # 🧠 Auto-detect platform
             if 'tiktok.com' in url:
                 platform = 'tiktok'
             elif 'facebook.com' in url:
@@ -43,4 +49,3 @@ async def download_video(data: VideoRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
