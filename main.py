@@ -1,68 +1,40 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 import yt_dlp
-import os
-from fastapi.responses import FileResponse
+import requests
 
-app = FastAPI()
+def resolve_redirect(url):
+    try:
+        response = requests.get(url, allow_redirects=True, timeout=10)
+        return response.url
+    except Exception as e:
+        print("Redirect resolution error:", e)
+        return url  # fallback
 
-class VideoRequest(BaseModel):
-    url: str
+@app.route('/api/download', methods=['POST'])
+def download():
+    data = request.get_json()
+    url = data.get('url')
+    
+    if not url:
+        return jsonify({'error': 'No URL provided'}), 400
 
-# Root endpoint
-@app.get("/")
-async def root():
-    return {"message": "Welcome to the Video Downloader API!"}
-
-# Favicon endpoint (serve a default favicon.ico)
-@app.get("/favicon.ico")
-async def favicon():
-    return FileResponse("favicon.ico")  # Add a favicon.ico file to your project folder
-
-# Health check endpoint
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
-# Video download endpoint
-@app.post("/api/download")
-async def download_video(data: VideoRequest):
-    url = data.url
-    output_dir = "downloads"
-
-    # Create the folder if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    final_url = resolve_redirect(url)
+    print(f"Resolved URL: {final_url}")
 
     ydl_opts = {
-        'outtmpl': os.path.join(output_dir, '%(title).50s.%(ext)s'),
-        'format': 'best',
-        'noplaylist': True,
-        # 'cookiefile': 'cookies.txt',  # Uncomment if you need cookies
+        'quiet': True,
+        'format': 'mp4',
+        'outtmpl': 'downloads/%(title)s.%(ext)s',
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            platform = 'unknown'
-
-            # Auto-detect platform
-            if 'tiktok.com' in url:
-                platform = 'tiktok'
-            elif 'facebook.com' in url:
-                platform = 'facebook'
-            elif 'instagram.com' in url:
-                platform = 'instagram'
-
-            return {
-                "status": "success",
-                "platform": platform,
-                "title": info.get("title"),
-                "ext": info.get("ext"),
-                "thumbnail": info.get("thumbnail"),
-                "filepath": filename
-            }
-
+            info = ydl.extract_info(final_url, download=False)
+            file_url = ydl.prepare_filename(info)
+            return jsonify({
+                'title': info.get('title'),
+                'thumbnail': info.get('thumbnail'),
+                'filepath': f"/static/{os.path.basename(file_url)}"
+            })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print("Download error:", str(e))
+        return jsonify({'error': 'Download failed', 'details': str(e)}), 500
