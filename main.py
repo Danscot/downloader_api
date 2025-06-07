@@ -1,33 +1,53 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 import yt_dlp
+import os
+import uuid
 
-app = FastAPI()  # ✅ Define the app properly for FastAPI
+app = FastAPI()
+
+class DownloadRequest(BaseModel):
+    url: str
 
 @app.post("/api/download")
-async def download_video(request: Request):
+async def download_video(req: DownloadRequest):
+    url = req.url
+    if not url:
+        return JSONResponse(status_code=400, content={"error": "URL is required"})
+
+    # Create a unique filename
+    video_id = str(uuid.uuid4())
+    output_template = f"{video_id}.%(ext)s"
+
+    # yt-dlp config
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_template,
+        'quiet': True,
+        'noplaylist': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+    }
+
     try:
-        data = await request.json()
-        url = data.get("url")
-        if not url:
-            return JSONResponse(content={"error": "URL not provided"}, status_code=400)
-
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'noplaylist': True,
-            'extract_flat': False,
-            'simulate': True,
-            'forcejson': True,
-        }
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return {
-                "title": info.get("title"),
-                "thumbnail": info.get("thumbnail"),
-                "url": info.get("webpage_url"),
-            }
+            info = ydl.extract_info(url, download=True)
+            filename = f"{video_id}.mp3"
+
+            if not os.path.exists(filename):
+                return JSONResponse(status_code=500, content={"error": "Download failed"})
+
+            return FileResponse(
+                path=filename,
+                filename=info.get("title", "audio") + ".mp3",
+                media_type="audio/mpeg",
+                background=None,
+            )
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
